@@ -6,8 +6,9 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.regex.Matcher;
@@ -17,17 +18,27 @@ import java.util.regex.Pattern;
  * @create 2023-03-02 1:44 PM
  */
 public class Client implements Runnable {
-    private String ip;
-    private String nickname;
-    private int port;
+
+    // my client ip (client ip = server ip) and my port of listening server
+    private String clientIp;
     private int serverPort;
-    private List<String[]> speakList;
+    // receiver ip and listening port of receiver server
+    private String ip;
+    private int port;
+    private ArrayList<String[]> list;
+    private boolean trigger = true;
 
-    private Map<String, String> onlineMap = new HashMap<>();
+    public Client(int serverPort, ArrayList<String[]> list) {
 
-    public Client(int serverPort, String nickname) {
         this.serverPort = serverPort;
-        this.nickname = nickname;
+        this.list = list;
+        try {
+            this.clientIp = InetAddress.getLocalHost().getHostAddress();
+            System.out.println(this.clientIp);
+            System.out.println(this.serverPort);
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        }
     }
 
     public void sendMsg() {
@@ -35,7 +46,7 @@ public class Client implements Runnable {
         try {
             Scanner scanner = new Scanner(System.in);
 
-            while (true) {
+            while (trigger) {
                 String msg = scanner.nextLine();
                 if (!msg.isEmpty()) {
                     if (msg.startsWith("help")) {
@@ -58,55 +69,77 @@ public class Client implements Runnable {
                         System.out.println("8. exit Close all connections and terminate this process. The other peers should also update their connection \n" +
                                 "list by removing the peer that exits.");
                     } else if (msg.startsWith("send")) {
-                        String s = msg.substring(5, 6);
-                        String[] ipAndPort = onlineMap.get(s).split(":");
-                        String toIp = ipAndPort[0];
-                        String toPort = ipAndPort[1];
-                        Socket socket = new Socket(toIp, Integer.parseInt(toPort));
-                        OutputStream os = socket.getOutputStream();
-                        PrintStream ps = new PrintStream(os);
-                        System.out.println("you say: " + msg.substring(7, msg.length()));
-                        ps.println("send?message=" + msg.substring(6, msg.length()));
-                        ps.flush();
+                        StringBuilder s = new StringBuilder();
+                        int i = 0;
+                        for(i=5; i<msg.length(); i++){
+                            char character = msg.charAt(i);
+                            if(' ' == character){
+                                break;
+                            }
+                            s.append(msg.charAt(i));
+                        }
+                        String indexStr = s.toString();
+                        String receiverIp = null;
+                        String receiverPort = null;
+
+                        for(String[] information:list){
+                            if(indexStr.equals(information[0])){
+                                receiverIp = information[1];
+                                receiverPort = information[2];
+                            }
+                        }
+
+
+                        String word = msg.substring(i);
+                        String message = "send " + receiverIp + " " + receiverPort + " " + this.serverPort + word;
+                        Tool.launch(receiverIp, Integer.parseInt(receiverPort), message);
+
+                        System.out.println("Message sent to peer [" + indexStr + "]");
                     } else if (msg.startsWith("connect")) {
                         String[] strs = msg.split(" ");
                         ip = strs[1];
                         port = Integer.parseInt(strs[2]);
-                        Socket socket = new Socket(ip, port);
-                        OutputStream os = socket.getOutputStream();
-                        PrintStream ps = new PrintStream(os);
-                        System.out.println("you are online");
-                        ps.println(msg + "--myport:{" + serverPort + "}");
-                        ps.flush();
+                        msg += " " + this.serverPort + " " + "sender";
+                        Tool.launch(ip, port, msg);
                     } else if (msg.startsWith("myip")) {
-                        System.out.println("My ip is: " + InetAddress.getLocalHost().getHostAddress());
+                        System.out.println("My ip is: " + this.clientIp);
                     } else if (msg.startsWith("myport")) {
-                        System.out.println("My server listening  port  is: " + serverPort);
+                        System.out.println("My server listening  port  is: " + this.serverPort);
                     } else if (msg.startsWith("exit")) {
-                        Socket socket = new Socket(ip, port);
-                        OutputStream os = socket.getOutputStream();
-                        PrintStream ps = new PrintStream(os);
-                        System.out.println("you are exit");
-                        ps.println(msg);
-                        ps.flush();
-                        System.out.println(InetAddress.getLocalHost().getHostAddress() + " exit");
+                        String receiverIp = null;
+                        String receiverPort = null;
+
+                        for(int i=0; i<list.size(); i++){
+                            String[] information = list.get(i);
+                            receiverIp = information[1];
+                            receiverPort = information[2];
+                            String message = "exit " + receiverIp + " " + receiverPort + " " + this.serverPort + " sender";
+                            Tool.launch(receiverIp, Integer.parseInt(receiverPort), message);
+
+                        }
+                        list = new ArrayList<>();
+                        System.out.println("Exit Message sent to peers!");
+                        System.out.println("Your server has exited!");
+                        System.out.println("---------------Client End---------------------");
                     } else if (msg.startsWith("list")) {
-                        Socket socket = new Socket(ip, port);
-                        OutputStream os = socket.getOutputStream();
-                        PrintStream ps = new PrintStream(os);
-                        ps.println(msg);
-                        ps.flush();
-                        BufferedReader br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                        String str = br.readLine();
-                        System.out.println(str);
-                        Client.subStringToIps(str, "id: ", " is", onlineMap);
+                        for(String[] information:list){
+                            System.out.println(information[0] + " " + information[1] + " " + information[2]);
+                        }
                     } else if (msg.startsWith("terminate")) {
-                        Socket socket = new Socket(ip, port);
-                        OutputStream os = socket.getOutputStream();
-                        PrintStream ps = new PrintStream(os);
-                        System.out.println("you are online");
-                        ps.println(msg);
-                        ps.flush();
+                        String indexStr = msg.substring(10, msg.length());
+                        String receiverIp = null;
+                        String receiverPort = null;
+
+                        for(String[] information:list){
+                            if(indexStr.equals(information[0])){
+                                receiverIp = information[1];
+                                receiverPort = information[2];
+                            }
+                        }
+                        String message = "terminate " + receiverIp + " " + receiverPort + " " + this.serverPort + " sender";
+                        Tool.launch(receiverIp, Integer.parseInt(receiverPort), message);
+
+                        System.out.println("Terminate Message sent to peer [" + indexStr + "]");
                     }
                 }
             }

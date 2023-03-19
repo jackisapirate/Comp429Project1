@@ -2,7 +2,12 @@ package com.app;
 
 import java.io.*;
 import java.net.Socket;
+import java.sql.SQLOutput;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
 /**
  * @author Kunlong Wang
  * @create 2023-03-02 1:44 PM
@@ -11,12 +16,14 @@ public class ServerThread extends Thread {
     private Socket socket;
     private PrintWriter out;
     private List<String[]> list;
+    private Server server;
 
     private int port = 0;
 
-    public ServerThread(Socket socket, List list) {
+    public ServerThread(Socket socket, Server server) {
         this.socket = socket;
-        this.list = list;
+        this.server = server;
+        this.list = server.getList();
     }
 
     @Override
@@ -26,10 +33,27 @@ public class ServerThread extends Thread {
             BufferedReader br = new BufferedReader(new InputStreamReader(is));
             BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
             String msg;
+            String remoteMsgArray[] = socket.getRemoteSocketAddress().toString().split(":");
+            String remoteIp = remoteMsgArray[0].substring(1, remoteMsgArray[0].length());
+
             while ((msg = br.readLine()) != null) {
+                System.out.println("---------NEW-ACTION-COMING----------------------------------");
                 if (msg.startsWith("send")) {
-                    msg = msg.substring(13, msg.length());
-                    System.out.println(socket.getRemoteSocketAddress() + " say: " + msg.replaceFirst("send", ""));
+                    int index = 0;
+                    int i = 4;
+                    while(--i>=0){
+                        index = msg.indexOf(" ", index + 1);
+                    }
+                    String[] information = msg.substring(0, index).split(" ");
+                    String message = msg.substring(index + 1, msg.length());
+
+//                    Message received from 192.168.21.20
+//                    Sender’s Port: <The port no. of the sender>
+//                    Message: “<received message>”
+                    System.out.println("----------------------NEW-MESSAGE----------------------");
+                    System.out.println("Message received from [" + remoteIp + "]");
+                    System.out.println("Sender’s Port: [" + information[3] + "]");
+                    System.out.println("Message: [" + message + "]");
                 } else if (msg.startsWith("connect")) {
                     String userId;
                     if (list.isEmpty()) {
@@ -37,33 +61,65 @@ public class ServerThread extends Thread {
                     } else {
                         userId = Integer.parseInt(list.get(list.size() - 1)[0]) + 1 + "";
                     }
-                    String remoteIpAndPort[] = socket.getRemoteSocketAddress().toString().split(":");
-                    String remoteIp = remoteIpAndPort[0].substring(1, remoteIpAndPort[0].length());
-                    String port = cutString(msg, "--myport:{", "}");
-                    String[] strs = {userId, remoteIp + ":" + port};
+                    String[] msgArray = msg.split(" ");
+                    String port = msgArray[3];
+                    String[] strs = {userId, remoteIp, port};
+
+                    if("sender".equals(msgArray[4])){
+                        String message = "connect " + remoteIp + " " + port + " " + this.server.getPort() + " receiver";
+                        Tool.launch(remoteIp, Integer.parseInt(port), message);
+                    }
                     list.add(strs);
-                    System.out.println(socket.getRemoteSocketAddress() + " online");
+                    System.out.println("Your connection with a friend  [" + remoteIp + ":" + port + "] has been established!");
+                    for(String str[]:list){
+                        System.out.println(Arrays.toString(str));
+                    }
                 } else if (msg.startsWith("exit")) {
-                    socket.close();
-//                  System.out.println(socket.getRemoteSocketAddress() + " exit");
-                    break;
+                    // exit 127.0.0.1 8081 8080 sender
+                    String[] msgArray = msg.split(" ");
+                    String port = msgArray[3];
+
+                    if("sender".equals(msgArray[4])){
+                        for(int i=0; i<list.size(); i++){
+                            String[] information = list.get(i);
+                            if(information[1].equals(remoteIp) && information[2].equals(port)){
+                                list.remove(i);
+                                break;
+                            }
+                        }
+                        System.out.println("Your connection with a friend  [" + remoteIp + ":" + port + "] has been disconnected!");
+                    }
+
+                    for(String str[]:list){
+                        System.out.println(Arrays.toString(str));
+                    }
                 } else if (msg.startsWith("list")) {
                     msg.replaceFirst("list", "online list: \n");
-                    for (String[] s : list) {
-                        msg += " id: " + s[0] + " ip: " + s[1] + " is online ";
+                    for(String str[]:list){
+                        msg+= "\t" + Arrays.toString(str) + "\n";
                     }
                     out = new PrintWriter(socket.getOutputStream());
                     out.println(msg);
                     out.flush();
                 } else if (msg.startsWith("terminate")) {
-                    String[] s = msg.split(" ");
-                    String id = s[1];
-                    for (int i = 0; i < list.size(); i++) {
-                        String[] current = list.get(i);
-                        if (current[0].equals(id)) {
+                    // terminate 127.0.0.1 8081 8080 sender/receiver
+                    String[] msgArray = msg.split(" ");
+                    String port = msgArray[3];
+
+                    if("sender".equals(msgArray[4])){
+                        String message = "terminate " + remoteIp + " " + port + " " + this.server.getPort() + " receiver";
+                        Tool.launch(remoteIp, Integer.parseInt(port), message);
+                    }
+                    for(int i=0; i<list.size(); i++){
+                        String[] information = list.get(i);
+                        if(information[1].equals(remoteIp) && information[2].equals(port)){
                             list.remove(i);
-                            System.out.println("user " + i + 1 + " has been kicked off");
+                            break;
                         }
+                    }
+                    System.out.println("Your connection with a friend  [" + remoteIp + ":" + port + "] has been disconnected!");
+                    for(String str[]:list){
+                        System.out.println(Arrays.toString(str));
                     }
                 }
             }

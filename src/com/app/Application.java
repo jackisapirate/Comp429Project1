@@ -1,5 +1,6 @@
 package com.app;
 
+import java.util.ArrayList;
 import java.util.Scanner;
 /**
  * @author Kunlong Wang
@@ -7,13 +8,12 @@ import java.util.Scanner;
  */
 public class Application {
     String port;
+    private ArrayList<String[]> list;
 
     public void startChat() {
         System.out.println("Hello! Your terminal has launched!");
-        System.out.println("Please input your Nickname:");
-        Scanner scanner = new Scanner(System.in);
-        String nickname = scanner.nextLine();
         System.out.println("Please input your Server Port that is listening for incoming connections:");
+        Scanner scanner = new Scanner(System.in);
         String port = scanner.nextLine();
         while(!Tool.isNumeric(port)){
             System.out.println("This Server Port must be numeric! Input it again:");
@@ -23,11 +23,9 @@ public class Application {
             System.out.println("This port is occupied by another process! Please change another and input it again:");
             port = scanner.nextLine();
         }
-
-
-
-        Server server = new Server(Integer.parseInt(port));
-        Client client = new Client(Integer.parseInt(port), nickname);
+        list = new ArrayList<>();
+        Server server = new Server(Integer.parseInt(port), list);
+        Client client = new Client(Integer.parseInt(port), list);
         new Thread(server).start();
         new Thread(client).start();
     }
